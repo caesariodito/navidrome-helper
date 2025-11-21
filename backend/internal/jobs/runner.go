@@ -36,9 +36,9 @@ type Runner struct {
 	queue chan *store.Job
 }
 
-func NewRunner(store *store.Store, cfg config.Config) *Runner {
+func NewRunner(st *store.Store, cfg config.Config) *Runner {
 	return &Runner{
-		store: store,
+		store: st,
 		cfg:   cfg,
 		queue: make(chan *store.Job, 16),
 	}

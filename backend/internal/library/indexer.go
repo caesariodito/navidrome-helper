@@ -69,8 +69,8 @@ audioLoop:
 				Path:       albumPath,
 				TrackCount: count,
 				UpdatedAt:  now,
-				artistNorm: artistNorm,
-				albumNorm:  albumNorm,
+				ArtistNorm: artistNorm,
+				AlbumNorm:  albumNorm,
 			}
 			entries = append(entries, entry)
 		}

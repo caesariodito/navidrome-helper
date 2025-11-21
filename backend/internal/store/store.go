@@ -54,8 +54,8 @@ type LibraryEntry struct {
 	Path        string    `json:"path"`
 	TrackCount  int       `json:"trackCount"`
 	UpdatedAt   time.Time `json:"updatedAt"`
-	artistNorm  string
-	albumNorm   string
+	ArtistNorm  string    `json:"-"`
+	AlbumNorm   string    `json:"-"`
 }
 
 // Store wraps the sqlite database.
@@ -305,7 +305,7 @@ func (s *Store) ReplaceLibraryIndex(entries []LibraryEntry) error {
 	}
 	defer stmt.Close()
 	for _, e := range entries {
-		if _, err := stmt.Exec(e.Artist, e.Album, e.Path, e.TrackCount, e.UpdatedAt.Format(time.RFC3339Nano), e.artistNorm, e.albumNorm); err != nil {
+		if _, err := stmt.Exec(e.Artist, e.Album, e.Path, e.TrackCount, e.UpdatedAt.Format(time.RFC3339Nano), e.ArtistNorm, e.AlbumNorm); err != nil {
 			return fmt.Errorf("insert library_index: %w", err)
 		}
 	}
@@ -323,7 +323,7 @@ func (s *Store) ListLibrary() ([]LibraryEntry, error) {
 	for rows.Next() {
 		var e LibraryEntry
 		var updatedAt string
-		if err := rows.Scan(&e.Artist, &e.Album, &e.Path, &e.TrackCount, &updatedAt, &e.artistNorm, &e.albumNorm); err != nil {
+		if err := rows.Scan(&e.Artist, &e.Album, &e.Path, &e.TrackCount, &updatedAt, &e.ArtistNorm, &e.AlbumNorm); err != nil {
 			return nil, err
 		}
 		e.UpdatedAt = parseTimeString(updatedAt)
