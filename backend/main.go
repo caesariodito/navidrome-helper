@@ -11,6 +11,7 @@ import (
 
 	"navidrome-helper/internal/config"
 	"navidrome-helper/internal/jobs"
+	"navidrome-helper/internal/library"
 	"navidrome-helper/internal/server"
 	"navidrome-helper/internal/store"
 )
@@ -28,7 +29,12 @@ func main() {
 	defer cancel()
 	runner.Start(ctx)
 
-	srv := server.New(cfg, store, runner)
+	indexer := library.NewIndexer(cfg, store)
+	if _, err := indexer.Refresh(ctx); err != nil {
+		log.Printf("library refresh at start failed: %v", err)
+	}
+
+	srv := server.New(cfg, store, runner, indexer)
 	go func() {
 		log.Printf("backend listening on :%s", cfg.Port)
 		if err := http.ListenAndServe(":"+cfg.Port, srv.Routes()); err != nil && err != http.ErrServerClosed {

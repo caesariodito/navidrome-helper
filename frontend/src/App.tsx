@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { createImport, getJob, listJobs, search } from './api'
-import type { ImportRequestItem, Job, SearchItem } from './types'
+import { createImport, getJob, getLibrary, listJobs, refreshLibrary, search } from './api'
+import type { ImportRequestItem, Job, LibraryEntry, SearchItem } from './types'
 
 const MIN_QUERY = 2
 
@@ -16,6 +16,9 @@ function App() {
   const [jobId, setJobId] = useState('')
   const [activeJob, setActiveJob] = useState<Job | null>(null)
   const [recentJobs, setRecentJobs] = useState<Job[]>([])
+  const [library, setLibrary] = useState<LibraryEntry[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryError, setLibraryError] = useState('')
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -40,6 +43,10 @@ function App() {
       .catch(() => {
         // ignore for now; likely backend not running yet
       })
+  }, [])
+
+  useEffect(() => {
+    loadLibrary()
   }, [])
 
   useEffect(() => {
@@ -109,6 +116,19 @@ function App() {
     }
   }
 
+  const loadLibrary = async (refresh = false) => {
+    setLibraryLoading(true)
+    setLibraryError('')
+    try {
+      const res = await (refresh ? refreshLibrary() : getLibrary())
+      setLibrary(res.library ?? [])
+    } catch (err: any) {
+      setLibraryError(err?.message ?? 'Failed to load library')
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
   return (
     <div className="page">
       <header className="hero">
@@ -147,11 +167,12 @@ function App() {
           {results.map((item) => {
             const normalized = normalizeSelection(item)
             const selectedState = normalizedSelection[normalized.id]
+            const already = item.exists
             return (
               <article
                 key={item.id}
-                className={`card ${selectedState ? 'selected' : ''}`}
-                onClick={() => toggleSelection(item)}
+                className={`card ${selectedState ? 'selected' : ''} ${already ? 'disabled' : ''}`}
+                onClick={() => (!already ? toggleSelection(item) : null)}
               >
                 <img className="cover" src={item.coverUrl} alt={`${item.title} cover`} />
                 <div className="card-body">
@@ -161,6 +182,7 @@ function App() {
                   {item.albumTitle && item.type === 'song' && (
                     <p className="muted small">Album: {item.albumTitle}</p>
                   )}
+                  {already && <p className="exists">Already in library</p>}
                   <p className="muted small">
                     {item.tracks ? `${item.tracks} tracks` : 'single'} ·{' '}
                     {item.duration ? formatDuration(item.duration) : 'duration n/a'}
@@ -285,6 +307,36 @@ function App() {
         </div>
       </section>
 
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Navidrome library</h2>
+            <p>Indexed albums from NAVIDROME_MUSIC_PATH.</p>
+          </div>
+          <div className="actions">
+            <button className="ghost" onClick={() => loadLibrary()}>
+              Reload
+            </button>
+            <button className="primary" onClick={() => loadLibrary(true)} disabled={libraryLoading}>
+              Refresh from disk
+            </button>
+          </div>
+        </div>
+        {libraryError && <div className="error">{libraryError}</div>}
+        {libraryLoading && <div className="empty">Refreshing library...</div>}
+        {!libraryLoading && library.length === 0 && <div className="empty">No albums indexed yet.</div>}
+        <div className="library-grid">
+          {library.map((entry) => (
+            <div key={`${entry.artist}-${entry.album}-${entry.path}`} className="recent-card">
+              <div className="label">{entry.album}</div>
+              <div className="muted small">{entry.artist}</div>
+              <div className="muted tiny">{entry.trackCount} tracks</div>
+              <div className="muted tiny">{new Date(entry.updatedAt).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {showConfirm && (
         <div className="dialog-backdrop">
           <div className="dialog">
@@ -315,6 +367,7 @@ function normalizeSelection(item: SearchItem): SearchItem {
       id: item.albumId,
       type: 'album',
       title: item.albumTitle || item.title,
+      exists: item.exists,
     }
   }
   return item

@@ -10,6 +10,7 @@ export interface SearchItem {
   coverUrl: string
   tracks?: number
   duration?: number
+  exists?: boolean
 }
 
 export interface ImportRequestItem {
@@ -56,4 +57,16 @@ export interface Job {
 
 export interface JobListResponse {
   jobs: Job[]
+}
+
+export interface LibraryEntry {
+  artist: string
+  album: string
+  path: string
+  trackCount: number
+  updatedAt: string
+}
+
+export interface LibraryResponse {
+  library: LibraryEntry[]
 }

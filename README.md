@@ -33,6 +33,11 @@ npm run dev
 
 Set `VITE_API_BASE` in a `.env` file (default empty uses same origin).
 
+## Library Sync
+- `GET /api/library` returns indexed albums (artist, album, trackCount, path, updatedAt). Add `?refresh=true` to trigger a rescan.
+- `POST /api/library/refresh` rescans `NAVIDROME_MUSIC_PATH` and returns the updated index.
+- `/api/search` responses include `exists` to indicate if the album is already present (songs map to parent albums for matching). The frontend disables selection for items that already exist.
+
 ## Notes
 - The backend job runner currently stubs doubledouble.top/pixeldrain and writes a placeholder file into the target album folder; swap in real fetch/download/extract logic where marked.
 - Song selections are normalized to their parent albums on import.

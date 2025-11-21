@@ -1,4 +1,4 @@
-import type { SearchItem, ImportRequestItem, Job, JobListResponse } from './types'
+import type { SearchItem, ImportRequestItem, Job, JobListResponse, LibraryResponse } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -33,4 +33,13 @@ export async function getJob(id: string): Promise<Job> {
 
 export async function listJobs(): Promise<JobListResponse> {
   return request<JobListResponse>('/api/jobs')
+}
+
+export async function getLibrary(refresh = false): Promise<LibraryResponse> {
+  const suffix = refresh ? '?refresh=true' : ''
+  return request<LibraryResponse>(`/api/library${suffix}`)
+}
+
+export async function refreshLibrary(): Promise<LibraryResponse> {
+  return request<LibraryResponse>('/api/library/refresh', { method: 'POST' })
 }

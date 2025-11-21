@@ -1,16 +1,20 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"navidrome-helper/internal/config"
 	"navidrome-helper/internal/jobs"
+	"navidrome-helper/internal/library"
 	"navidrome-helper/internal/store"
+	"navidrome-helper/internal/util"
 )
 
 // Server wires HTTP handlers to the runner and store.
@@ -18,10 +22,11 @@ type Server struct {
 	cfg    config.Config
 	store  *store.Store
 	runner *jobs.Runner
+	index  *library.Indexer
 }
 
-func New(cfg config.Config, store *store.Store, runner *jobs.Runner) *Server {
-	return &Server{cfg: cfg, store: store, runner: runner}
+func New(cfg config.Config, store *store.Store, runner *jobs.Runner, indexer *library.Indexer) *Server {
+	return &Server{cfg: cfg, store: store, runner: runner, index: indexer}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -36,6 +41,8 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/api/import", s.handleImport)
 	r.Get("/api/jobs", s.handleListJobs)
 	r.Get("/api/jobs/{id}", s.handleGetJob)
+	r.Get("/api/library", s.handleLibraryList)
+	r.Post("/api/library/refresh", s.handleLibraryRefresh)
 
 	return r
 }
@@ -43,6 +50,7 @@ func (s *Server) Routes() http.Handler {
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	results := mockSearchResults(query)
+	s.annotateExists(results)
 	writeJSON(w, http.StatusOK, map[string]any{"items": results})
 }
 
@@ -147,6 +155,38 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, job)
 }
 
+func (s *Server) handleLibraryList(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("refresh") == "true" && s.index != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		if _, err := s.index.Refresh(ctx); err != nil {
+			http.Error(w, "failed to refresh library", http.StatusInternalServerError)
+			return
+		}
+	}
+	entries, err := s.store.ListLibrary()
+	if err != nil {
+		http.Error(w, "failed to list library", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"library": entries})
+}
+
+func (s *Server) handleLibraryRefresh(w http.ResponseWriter, r *http.Request) {
+	if s.index == nil {
+		http.Error(w, "indexer not available", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	entries, err := s.index.Refresh(ctx)
+	if err != nil {
+		http.Error(w, "failed to refresh library", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"library": entries})
+}
+
 type importRequest struct {
 	Items []importItem `json:"items"`
 }
@@ -171,6 +211,7 @@ type searchResult struct {
 	CoverURL   string `json:"coverUrl"`
 	Tracks     int    `json:"tracks,omitempty"`
 	Duration   int    `json:"duration,omitempty"`
+	Exists     bool   `json:"exists"`
 }
 
 func mockSearchResults(query string) []searchResult {
@@ -213,6 +254,27 @@ func mockSearchResults(query string) []searchResult {
 		}
 	}
 	return []searchResult{}
+}
+
+func (s *Server) annotateExists(results []searchResult) {
+	for idx := range results {
+		res := &results[idx]
+		artist := util.NormalizeName(res.Artist)
+		album := util.NormalizeName(res.Title)
+		if res.Type == "song" && res.AlbumTitle != "" {
+			album = util.NormalizeName(res.AlbumTitle)
+		}
+		if artist == "" || album == "" {
+			res.Exists = false
+			continue
+		}
+		ok, err := s.store.LibraryExists(artist, album)
+		if err != nil {
+			res.Exists = false
+			continue
+		}
+		res.Exists = ok
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

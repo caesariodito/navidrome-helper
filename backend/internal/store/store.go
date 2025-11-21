@@ -47,6 +47,17 @@ type JobLogLine struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// LibraryEntry represents an album indexed from NAVIDROME_MUSIC_PATH.
+type LibraryEntry struct {
+	Artist      string    `json:"artist"`
+	Album       string    `json:"album"`
+	Path        string    `json:"path"`
+	TrackCount  int       `json:"trackCount"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	artistNorm  string
+	albumNorm   string
+}
+
 // Store wraps the sqlite database.
 type Store struct {
 	db *sql.DB
@@ -99,6 +110,16 @@ func (s *Store) bootstrap() error {
 			job_id TEXT NOT NULL,
 			message TEXT NOT NULL,
 			created_at TEXT NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS library_index (
+			artist TEXT NOT NULL,
+			album TEXT NOT NULL,
+			path TEXT NOT NULL,
+			track_count INTEGER NOT NULL,
+			updated_at TEXT NOT NULL,
+			artist_norm TEXT NOT NULL,
+			album_norm TEXT NOT NULL,
+			PRIMARY KEY (artist_norm, album_norm)
 		);`,
 	}
 	for _, q := range schemas {
@@ -266,6 +287,62 @@ func (s *Store) loadLogs(jobID string) ([]JobLogLine, error) {
 		logs = append(logs, line)
 	}
 	return logs, nil
+}
+
+// ReplaceLibraryIndex replaces the entire library_index table with the provided entries.
+func (s *Store) ReplaceLibraryIndex(entries []LibraryEntry) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM library_index`); err != nil {
+		return fmt.Errorf("clear library_index: %w", err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO library_index (artist, album, path, track_count, updated_at, artist_norm, album_norm) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare insert library_index: %w", err)
+	}
+	defer stmt.Close()
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.Artist, e.Album, e.Path, e.TrackCount, e.UpdatedAt.Format(time.RFC3339Nano), e.artistNorm, e.albumNorm); err != nil {
+			return fmt.Errorf("insert library_index: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ListLibrary returns all library entries.
+func (s *Store) ListLibrary() ([]LibraryEntry, error) {
+	rows, err := s.db.Query(`SELECT artist, album, path, track_count, updated_at, artist_norm, album_norm FROM library_index ORDER BY artist_norm, album_norm`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LibraryEntry
+	for rows.Next() {
+		var e LibraryEntry
+		var updatedAt string
+		if err := rows.Scan(&e.Artist, &e.Album, &e.Path, &e.TrackCount, &updatedAt, &e.artistNorm, &e.albumNorm); err != nil {
+			return nil, err
+		}
+		e.UpdatedAt = parseTimeString(updatedAt)
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// LibraryExists reports whether a given normalized artist/album is in the index.
+func (s *Store) LibraryExists(artistNorm, albumNorm string) (bool, error) {
+	row := s.db.QueryRow(`SELECT 1 FROM library_index WHERE artist_norm=? AND album_norm=? LIMIT 1`, artistNorm, albumNorm)
+	var dummy int
+	if err := row.Scan(&dummy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func parseTime(ns sql.NullString) time.Time {
