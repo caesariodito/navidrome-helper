@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  backend:
+    container_name: navidrome-helper-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8173:8173"
+    environment:
+      PORT: "8173"
+      DATA_DIR: /data
+      TEMP_DIR: /data/tmp
+      NAVIDROME_MUSIC_PATH: /music
+      # AMAZON_API_BASE_URL: ""   # set if needed
+    volumes:
+      - ${NAVIDROME_DATA_PATH:-/home/sesarbun/docker-configs/navidrome/data}:/data
+      - ${NAVIDROME_MUSIC_PATH:-/home/sesarbun/docker-configs/navidrome/music}:/music:ro
+    restart: unless-stopped
+
+  frontend:
+    container_name: navidrome-helper-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes: {}
